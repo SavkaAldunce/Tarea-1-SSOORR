@@ -1,4 +1,4 @@
 *.bin
 osms
 obj/
-.Ds_Store/
+.DS_Store
