@@ -9,7 +9,7 @@ void os_ls_processes();
 
 int os_exists(int process_id, char* file_name);
 
-// void os_ls_files(int process_id);
+void os_ls_files(int process_id);
 
 // void os_frame_bitmap(int PFN_i, int PFN_f);
 
