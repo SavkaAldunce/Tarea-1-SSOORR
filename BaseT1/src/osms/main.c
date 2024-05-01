@@ -5,7 +5,7 @@ int main(int argc, char const *argv[])
 
     // montar la memoria
     os_mount((char *)argv[1]);
-
-
+    os_ls_processes();
+    os_exists(255, "BeachChant.mp3");
 
 }
