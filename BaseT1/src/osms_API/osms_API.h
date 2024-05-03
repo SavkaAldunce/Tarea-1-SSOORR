@@ -11,13 +11,13 @@ int os_exists(int process_id, char* file_name);
 
 void os_ls_files(int process_id);
 
-// void os_frame_bitmap(int PFN_i, int PFN_f);
+void os_frame_bitmap(int PFN_i, int PFN_f);
 
-// // funciones procesos
+// funciones procesos
 
-// int os_start_process(int process_id, char* process_name);
+int os_start_process(int process_id, char* process_name);
 
-// int os_finish_process(int process_id);
+int os_finish_process(int process_id);
 
 // // funciones archivos
 
@@ -34,3 +34,9 @@ void os_ls_files(int process_id);
 // void os_delete_file(int process_id, char* file_name); -- BONUS
 
 // void os_close(OsmsFile* file_desc);
+
+
+
+// BORRAAAAAAAAAAAAAR
+
+void os_print();
