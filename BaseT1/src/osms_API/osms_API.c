@@ -3,8 +3,12 @@
 #include <string.h> //para strcmp
 #include <stdbool.h> // bool, true, false
 #include <stdint.h>
+#include "Osms_File_list.h"
+#include "Osms_File.h"
 
 char* path;
+FilesList *list;
+int list_len = 0;
 
 // funciones generales
 
@@ -74,8 +78,11 @@ int os_exists(int process_id, char* file_name){
         }
 
         int id = (unsigned char)entry[15]; // El id del proceso
+        unsigned char byte = (unsigned char)process_id;
+        int new_process_id = (unsigned char)byte;
+
         // Si el id es igual al id del proceso
-        if(id == process_id){
+        if(id == new_process_id){
 
             // Empieza a leer donde empieza el archivo
             int counter = 17;
@@ -124,7 +131,10 @@ os_ls_files(int process_id){
         }
 
         int id = (unsigned char)entry[15]; // El id del proceso
-        if(id == process_id){
+        unsigned char byte = (unsigned char)process_id;
+        int new_process_id = (unsigned char)byte;
+
+        if(id == new_process_id){
 
             int counter = 16;
             for(int i = 0; i < 10; i++){
@@ -348,6 +358,141 @@ int os_finish_process(int process_id){
         }
 
     }
+}
+
+OsmsFile* os_open(int process_id, char* file_name, char mode){
+
+    unsigned char byte = (unsigned char)process_id;
+    int new_process_id = (unsigned char)byte;
+
+    if(mode == "r"){
+        // Verificamos si archivo existe y si esta en la lista de archivos (si struct ya esta creado)
+        if(os_exists(new_process_id, file_name) == 0 & file_exists(new_process_id, file_name, list, list_len) == false){
+            return NULL;
+        }
+        else if(os_exists(new_process_id, file_name) == 1 & file_exists(new_process_id, file_name, list, list_len) == false){
+            OsmsFile file = file_create(new_process_id, file_name, list_len);
+            if(list_len == 0){
+                list = fileslist_init(file);
+            }
+            else {
+                fileslist_append(list, file);
+            }
+            list_len = list_len + 1;
+            return(fileslist_at_index(list, list_len - 1)); // retornamos struct
+        }
+        else if(os_exists(new_process_id, file_name) == 1 & file_exists(new_process_id, file_name, list, list_len) == true) {
+            int id = id_file(new_process_id, file_name, list, list_len);
+            return(fileslist_at_index(list, id - 1));
+        }
+    }
+    else if(mode == "w"){
+        // Verificamos que archivo exista
+        if(os_exists(new_process_id, file_name) == 0 & file_exists(new_process_id, file_name, list, list_len) == false){
+            // Vemos si hay espacio para el archivo
+            bool available_space = os_verify_space_subentry(new_process_id, file_name);
+            if(available_space == true){
+                OsmsFile file = file_create(new_process_id, file_name, list_len);
+                if(list_len == 0){
+                    list = fileslist_init(file);
+                }
+                else {
+                    fileslist_append(list, file);
+                }
+                list_len = list_len + 1;
+                return(fileslist_at_index(list, list_len - 1)); // Retornamos el struct
+            }
+            else {
+                return NULL;
+            }
+        }
+    }
+}
+
+// Funciones hechas por nostros :D
+
+// Verificar si hay espacio para el archivo y realizar cambios en la memoria pertinentes
+bool os_verify_space_subentry(int process_id, char *file_name){
+
+    FILE *file;
+
+    // Abre el archivo en modo lectura binaria
+    file = fopen(path, "rb");
+
+    // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
+    size_t entry_size = 256;
+    unsigned char entry[entry_size];
+
+    // Lee hasta 32 entradas
+    size_t bytes_read;
+    for (int i = 0; i < 32; ++i) {
+        // Lee un bloque de 256 bytes
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Si no se leen más datos, salir del bucle
+        if (bytes_read == 0) {
+            break;
+        }
+
+        int id = (unsigned char)entry[15]; // El id del proceso
+        // Si el id es igual al id del proceso
+        if(id == process_id){
+
+            // Empieza a leer donde empieza el archivo
+            int counter = 16;
+            for(int i = 0; i < 10; i++){
+                unsigned char exists = (unsigned char)entry[0];
+                if(exists == 0x00){
+
+                    // Validez
+                    entry[0] = 1;
+
+                    // Tamaño
+                    for(int i = 15; i < 20; i++){
+                        entry[i] = 0;
+                    }
+
+                    // Nombre
+                    char array[14];  // Array de 14 bytes
+
+                    // Verifica si la cadena tiene al menos 14 caracteres
+                    if (strlen(file_name) >= 14) {
+                        memcpy(array, file_name, 14);  // Copia los primeros 14 bytes
+                    } else {
+                        // Si nombre es más corto que 14 caracteres, copia lo que hay y rellena con ceros
+                        memcpy(array, file_name, strlen(file_name));
+                        memset(array + strlen(file_name), 0, 14 - strlen(file_name));  // Rellena el resto con ceros
+                    }
+
+                    for(int i = 0; i < 14; i++){
+                        entry[i + 1] = array[i];
+                    }
+
+                    // Mover el puntero del archivo a la posición inicial de la entrada actual
+                    fseek(file, -((long)entry_size), SEEK_CUR);
+
+                    // Escribir la entrada modificada de vuelta al archivo
+                    fwrite(entry, 1, entry_size, file);
+
+                    // Asegurarse de que los cambios se guarden en el disco
+                    fflush(file);
+
+                    fclose(file);
+
+                    return true;
+
+                }
+                // Cada 24 bytes mueve al inicio del siguiente archivo
+                counter += 24;
+            }
+            fclose(file);
+            return false;
+        }
+
+    }
+    fclose(file);
+    return false;
+
 }
 
 void os_print(){

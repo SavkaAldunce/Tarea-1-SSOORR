@@ -21,7 +21,7 @@ int os_finish_process(int process_id);
 
 // // funciones archivos
 
-// OsmsFile* os_open(int process_id, char* file_name, char mode);
+OsmsFile* os_open(int process_id, char* file_name, char mode);
 
 // uint64_t os_write(OsmsFile* file_desc, uint8_t* buffer, uint64_t n_bytes);
 
