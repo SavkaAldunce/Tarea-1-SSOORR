@@ -8,5 +8,6 @@ typedef struct fileslist {
 
 FilesList* fileslist_init(OsmsFile value);
 void fileslist_append(FilesList* list ,OsmsFile value );
+FilesList* fileslist_delete(FilesList* list, int id);
 OsmsFile* fileslist_at_index(FilesList* list, int index);
 void fileslist_destroy(FilesList* list);

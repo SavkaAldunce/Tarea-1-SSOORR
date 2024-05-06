@@ -1,5 +1,6 @@
 #pragma once
 #include "../osms_File/Osms_File.h"
+#include <stdint.h>
 
 // funciones generales
 
@@ -33,10 +34,12 @@ OsmsFile* os_open(int process_id, char* file_name, char mode);
 
 // void os_delete_file(int process_id, char* file_name); -- BONUS
 
-// void os_close(OsmsFile* file_desc);
+void os_close(OsmsFile* file_desc);
 
 
 
 // BORRAAAAAAAAAAAAAR
+
+bool os_verify_space_subentry(int process_id, char *file_name);
 
 void os_print();

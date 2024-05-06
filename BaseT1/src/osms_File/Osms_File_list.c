@@ -38,6 +38,27 @@ void fileslist_append(FilesList* list, OsmsFile value)
   last->next = new_list;
 }
 
+FilesList* fileslist_delete(FilesList* list, int id){
+
+  FilesList *actual = list;
+  FilesList *previous = NULL; // Referencia al elemento anterior
+  while(true){
+    if(actual->value.file_id == id){
+      if(previous == NULL){
+        actual = actual->next;
+        return actual; // Devolvemos la referencia al nuevo inicio
+      } else {
+        previous->next = actual->next;
+        return list; //Devolvemos la misma referencia con las modificaciones
+      }
+    }
+    // Actualizamos valores
+    previous = actual;
+    actual = actual->next;
+  }
+
+}
+
 // Definimos una funcion que nos retorne el valor en un indice de la lista
 OsmsFile* fileslist_at_index(FilesList* list, int index)
 {

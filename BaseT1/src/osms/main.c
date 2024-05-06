@@ -11,7 +11,7 @@ int main(int argc, char const *argv[])
     os_frame_bitmap(29642, 30998);
     os_start_process(1, "Hola");
     os_finish_process(1);
-
+    
     // Borraaaaaaaar
     os_print();
 
