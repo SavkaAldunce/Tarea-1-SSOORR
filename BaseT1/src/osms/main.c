@@ -14,5 +14,6 @@ int main(int argc, char const *argv[])
     
     // Borraaaaaaaar
     os_print();
+    os_full_vd_array();
 
 }

@@ -9,6 +9,8 @@
 char* path;
 FilesList *list;
 int list_len = 0;
+uint32_t vd_list[320];
+
 
 // Funciones hechas por nosotros :D
 
@@ -18,7 +20,7 @@ bool os_verify_space_subentry(int process_id, char *file_name){
     FILE *file;
 
     // Abre el archivo en modo lectura binaria
-    file = fopen(path, "rb");
+    file = fopen(path, "r+b");
 
     // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
     size_t entry_size = 256;
@@ -26,6 +28,7 @@ bool os_verify_space_subentry(int process_id, char *file_name){
 
     // Lee hasta 32 entradas
     size_t bytes_read;
+    size_t total_bytes_read = 0;
     for (int i = 0; i < 32; ++i) {
         // Lee un bloque de 256 bytes
         bytes_read = fread(entry, 1, entry_size, file);
@@ -33,6 +36,8 @@ bool os_verify_space_subentry(int process_id, char *file_name){
         // Si no se leen más datos, salir del bucle
         if (bytes_read == 0) {
             break;
+        } else {
+            total_bytes_read = total_bytes_read + bytes_read; // Para saber a donde mover el puntero nuevamente en el archivo
         }
 
         int id = (unsigned char)entry[15]; // El id del proceso
@@ -69,6 +74,49 @@ bool os_verify_space_subentry(int process_id, char *file_name){
                         entry[i + 1] = array[i];
                     }
 
+                    // Direccion virtual
+                    uint32_t vd;
+                    while(true){
+                        vd = rand() & 0x03FFFF; // 0x03FFFF es una máscara que permite solo los primeros 22 bits (los 4 más significativos son cero)
+                        bool vd_already_exists = false;
+                        for(int i = 0; i < 320; i++){
+                            if(vd == vd_list[i]){
+                                vd_already_exists = true;
+                                break;
+                            }
+                        }
+                        if(vd_already_exists == false){
+                            break;
+                        }
+                    }
+                    // Agregamos direccion a nuestra lista
+                    for(int i = 0; i < 320; i++){
+                        if((int)vd_list[i] == 0){
+                            vd_list[i] = vd;
+                        }
+                    }
+                    uint32_t VPN = (vd >> 15) & 0x1FFF; // Extraemos el VPN
+                    uint8_t vpn_bits[10]; // Arreglo para almacenar cada uno de los 10 bits
+                    // Extracción y almacenamiento de los 10 bits menos significativos
+                    for (int i = 0; i < 10; i++) {
+                        vpn_bits[i] = (VPN >> i) & 1; // Desplaza la variable 'var' i posiciones y aplica máscara para obtener el bit
+                    }
+                    uint32_t process_id_uint = (u_int32_t)process_id;
+                    uint8_t process_bits[10]; // Arreglo para almacenar cada uno de los 10 bits
+                    // Extracción y almacenamiento de los 10 bits menos significativos
+                    for (int i = 0; i < 13; i++) {
+                        process_bits[i] = (process_id >> i) & 1; // Desplaza la variable 'var' i posiciones y aplica máscara para obtener el bit
+                    }
+                    entry[20] = (vd >> 24) & 0xFF; // Extrae el byte más significativo
+                    entry[21] = (vd >> 16) & 0xFF; // Extrae el segundo byte más significativo
+                    entry[22] = (vd >> 8) & 0xFF;  // Extrae el tercer byte más significativo
+                    entry[23] = vd & 0xFF; 
+
+                    // Cambiamos tabla invertida
+                    fseek(file, -total_bytes_read, SEEK_CUR);
+                    os_edit_table(process_bits, vpn_bits, file);
+                    fseek(file, total_bytes_read, SEEK_SET);
+
                     // Mover el puntero del archivo a la posición inicial de la entrada actual
                     fseek(file, -((long)entry_size), SEEK_CUR);
 
@@ -93,6 +141,128 @@ bool os_verify_space_subentry(int process_id, char *file_name){
     }
     fclose(file);
     return false;
+
+}
+
+void os_full_vd_array(){
+    FILE *file;
+
+    // Abre el archivo en modo lectura binaria
+    file = fopen(path, "rb");
+
+    // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
+    size_t entry_size = 256;
+    unsigned char entry[entry_size];
+
+    // Lee hasta 32 entradas
+    size_t bytes_read;
+    int counter_array = 0;
+    for (int i = 0; i < 32; ++i) {
+        // Lee un bloque de 256 bytes
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Si no se leen más datos, salir del bucle
+        if (bytes_read == 0) {
+            break;
+        }
+
+        int counter = 16;
+        for(int i = 0; i < 10; i++){
+            // Direcion Virtual
+            uint32_t virtual_direction = 0;
+            for (int i = 0; i < 4; i++){
+                virtual_direction |= ((uint64_t)entry[counter + 20 + i] << (8 * i));
+            }
+            vd_list[counter_array] = virtual_direction;
+            counter_array = counter_array + 1;
+            counter += 24;
+            }
+
+    }
+    for(int i = 0; i < 320; i++){
+        printf("elemento %d: 0x%X\n", i, vd_list[i]);
+    }
+}
+
+void os_edit_table(uint8_t *process_id_list, uint8_t *VPN_list, FILE* file){
+
+    // Nos movemos hasta la parte del archivo que queremos
+    size_t entry_size = 3;
+    unsigned char entry[entry_size];
+
+    fseek(file, 8192, SEEK_SET);
+
+    size_t bytes_read;
+    for(int i = 0; i < 65536; i++){
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Extraer el primer bit
+        int exist = (entry[0] >> 7) & 1;  // Desplaza 7 bits a la derecha y aplica máscara para el último bit
+        int bit_counter = 0;
+        int pointer_process_id = 0;
+        int pointer_vpn = 0;
+        if(exist == 0){
+            for (int i = 0; i < 3; i++) {
+            // Recorrer cada bit en un byte específico
+            for (int j = 0; j < 8; j++) {
+                bit_counter += 1;
+
+                if(bit_counter == 1){
+                    entry[i] |= (1 << j);
+                }
+                else if(bit_counter >= 2 && bit_counter <= 11 && (int)process_id_list[pointer_process_id] == 1){
+                    entry[i] |= (1 << j);
+                    pointer_process_id = pointer_process_id + 1;
+                }
+                else if(bit_counter >= 2 && bit_counter <= 11 && (int)process_id_list[pointer_process_id] == 0){
+                    entry[i] &= ~(1 << j);
+                    pointer_process_id = pointer_process_id + 1;
+                }
+                else if(bit_counter >= 12 && (int)VPN_list[pointer_vpn] == 1){
+                    entry[i] |= (1 << j);
+                    pointer_vpn = pointer_vpn + 1;
+                }
+                else if(bit_counter >= 12 && (int)VPN_list[pointer_vpn] == 0){
+                    entry[i] &= ~(1 << j);
+                    pointer_vpn = pointer_vpn + 1;
+                }
+
+            }
+        }
+        // Mover el puntero del archivo a la posición inicial de la entrada actual
+        fseek(file, -((long)entry_size), SEEK_CUR);
+
+        // Escribir la entrada modificada de vuelta al archivo
+        fwrite(entry, 1, entry_size, file);
+
+        // Asegurarse de que los cambios se guarden en el disco
+        fflush(file);
+        }
+    }
+}
+
+int os_find_FPN(uint32_t process_id, uint32_t VPN, FILE* file){
+
+    // Nos movemos hasta la parte del archivo que queremos
+    size_t entry_size = 3;
+    unsigned char entry[entry_size];
+
+    fseek(file, 8192, SEEK_SET);
+
+    for(int i = 0; i < 65536; i++){
+        fread(entry, 1, entry_size, file);
+
+        // Extraer el primer bit
+        int exist = (entry[0] >> 7) & 1;  // Desplaza 7 bits a la derecha y aplica máscara para el último bit
+        // Extraer los siguientes 10 bits
+        uint32_t id = ((entry[0] & 0x7F) << 3) | (entry[1] >> 5);  // Extrae los últimos 7 bits del primer byte y los primeros 3 bits del segundo byte
+        // Extraer los últimos 13 bits
+        uint32_t vpn = ((entry[1] & 0x1F) << 8) | entry[2];  // Extrae los últimos 5 bits del segundo byte y todos los bits del tercer byte
+
+        if(id == process_id && vpn == VPN){
+            return i + 1; //Encontramos la entrada
+        }
+    }
 
 }
 
@@ -137,6 +307,24 @@ void os_print(){
             counter += 24;
             }
 
+    }
+    entry_size = 3;
+    for(int i = 0; i < 65536; i++){
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Extraer el primer bit
+        int exist = (entry[0] >> 7) & 1;  // Desplaza 7 bits a la derecha y aplica máscara para el último bit
+
+        // Extraer los siguientes 10 bits
+        int process_id = ((entry[0] & 0x7F) << 3) | (entry[1] >> 5);  // Extrae los últimos 7 bits del primer byte y los primeros 3 bits del segundo byte
+
+        // Extraer los últimos 13 bits
+        int vpn = ((entry[1] & 0x1F) << 8) | entry[2];  // Extrae los últimos 5 bits del segundo byte y todos los bits del tercer byte
+
+        // Imprimir los resultados
+        if(exist == 1){
+            printf("Existe: %d, id proceso: %d, VPN: %d\n", exist, process_id, vpn);
+        }
     }
 
     fclose(file);
@@ -540,6 +728,88 @@ OsmsFile* os_open(int process_id, char* file_name, char mode){
             }
         }
     }
+}
+
+uint64_t os_write(OsmsFile* file_desc, uint8_t* buffer, uint64_t n_bytes) {
+
+    FILE *file;
+
+    // Abre el archivo en modo lectura binaria
+    file = fopen(path, "r+b");
+
+    // FPN
+    int FPN;
+
+
+    // Obtenemos el frame donde debemos escribir //
+
+    // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
+    size_t entry_size = 256;
+    unsigned char entry[entry_size];
+
+    // Lee hasta 32 entradas
+    size_t bytes_read;
+    size_t total_bytes_read = 0;
+    for (int i = 0; i < 32; ++i) {
+        // Lee un bloque de 256 bytes
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Si no se leen más datos, salir del bucle
+        if (bytes_read == 0) {
+            break;
+        } else {
+            total_bytes_read = total_bytes_read + bytes_read;
+        }
+
+        int process_id = (unsigned char)entry[15]; // El id del proceso
+        if(process_id == file_desc->process_id){
+            int counter = 16;
+            for(int i = 0; i < 10; i++){
+
+                // Nombre del archivo
+                unsigned char archive_name[15] = {0};
+                strncpy(archive_name, entry + counter + 1, 14);
+
+                if(strcmp(archive_name, file_desc->file_name) == 0){
+                    // Direcion Virtual
+                    uint32_t virtual_direction = 0;
+                    for (int i = 0; i < 4; i++){
+                        virtual_direction |= ((uint64_t)entry[counter + 20 + i] << (8 * i));
+                    }
+                    uint32_t VPN = (virtual_direction >> 15) & 0x1FFF; // Obtenemos el VPN
+                    fseek(file, -total_bytes_read, SEEK_CUR);
+                    FPN = os_find_FPN((uint32_t)process_id, VPN, file);
+                    fseek(file, 212992, SEEK_SET); //Seteamos para leer desde los frames
+                    break; // Obtuvimos el FPN
+
+                }
+                counter += 24;
+            }
+        }
+
+    }
+
+    // Escribimos en el archivo
+
+    fseek(file, 32768*FPN, SEEK_CUR); //Seteamos para leer desde los frames
+    if(n_bytes <= 32768 - file_desc->current_position){
+        fseek(file, file_desc->current_position, SEEK_CUR); // Movemos donde se tiene que empezar a escribir
+        fwrite(buffer, 1, n_bytes, file);
+        file_desc->current_position = file_desc->current_position + n_bytes;
+        fclose(file);
+        return n_bytes;
+    } else{
+        int n_bytes_to_write = 32768 - file_desc->current_position; // Cuantos bytes vamos a escribir
+        fseek(file, file_desc->current_position, SEEK_CUR); // Movemos donde se tiene que empezar a escribir
+        fwrite(buffer, 1, n_bytes_to_write, file);
+        file_desc->current_position = file_desc->current_position + n_bytes_to_write;
+        fclose(file);
+        return n_bytes_to_write;
+    }
+}
+
+uint64_t os_read(OsmsFile* file_desc, uint8_t* buffer, uint64_t n_bytes){
+    
 }
 
 void os_close(OsmsFile* file_desc){
