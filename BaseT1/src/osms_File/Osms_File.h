@@ -11,7 +11,7 @@ typedef struct
     int process_id;
     char *file_name;
     off_t current_position; // Posición actual del puntero de archivo
-    
+    off_t current_position_read;   
 } OsmsFile;
 
 bool file_exists(int process_id, char *file_name, struct fileslist *list, int list_len); // Usa struct fileslist

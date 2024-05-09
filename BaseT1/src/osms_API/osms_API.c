@@ -266,6 +266,10 @@ int os_find_FPN(uint32_t process_id, uint32_t VPN, FILE* file){
 
 }
 
+void os_free(){
+    fileslist_destroy(list);
+}
+
 void os_print(){
 
     FILE *file;
@@ -303,28 +307,13 @@ void os_print(){
             for (int i = 0; i < 4; i++){
                 virtual_direction |= ((uint64_t)entry[counter + 20 + i] << (8 * i));
             }
-            printf("existe: %d, direccion virtual: 0x%X  \n", exists, virtual_direction);
+            // Nombre archivo
+            unsigned char archive_name[15] = {0};
+            strncpy(archive_name, entry + counter + 1, 14);
+            printf("existe: %d, nombre: %s, procees_id: %d  \n", exists, archive_name, process_id);
             counter += 24;
             }
 
-    }
-    entry_size = 3;
-    for(int i = 0; i < 65536; i++){
-        bytes_read = fread(entry, 1, entry_size, file);
-
-        // Extraer el primer bit
-        int exist = (entry[0] >> 7) & 1;  // Desplaza 7 bits a la derecha y aplica máscara para el último bit
-
-        // Extraer los siguientes 10 bits
-        int process_id = ((entry[0] & 0x7F) << 3) | (entry[1] >> 5);  // Extrae los últimos 7 bits del primer byte y los primeros 3 bits del segundo byte
-
-        // Extraer los últimos 13 bits
-        int vpn = ((entry[1] & 0x1F) << 8) | entry[2];  // Extrae los últimos 5 bits del segundo byte y todos los bits del tercer byte
-
-        // Imprimir los resultados
-        if(exist == 1){
-            printf("Existe: %d, id proceso: %d, VPN: %d\n", exist, process_id, vpn);
-        }
     }
 
     fclose(file);
@@ -679,6 +668,7 @@ int os_finish_process(int process_id){
         }
 
     }
+    fclose(file);
 }
 
 OsmsFile* os_open(int process_id, char* file_name, char mode){
@@ -686,7 +676,7 @@ OsmsFile* os_open(int process_id, char* file_name, char mode){
     unsigned char byte = (unsigned char)process_id;
     int new_process_id = (unsigned char)byte;
 
-    if(mode == "r"){
+    if(mode == 'r'){
         // Verificamos si archivo existe y si esta en la lista de archivos (si struct ya esta creado)
         if(os_exists(new_process_id, file_name) == 0 & file_exists(new_process_id, file_name, list, list_len) == false){
             return NULL;
@@ -707,7 +697,7 @@ OsmsFile* os_open(int process_id, char* file_name, char mode){
             return(fileslist_at_index(list, id - 1));
         }
     }
-    else if(mode == "w"){
+    else if(mode == 'w'){
         // Verificamos que archivo exista
         if(os_exists(new_process_id, file_name) == 0 & file_exists(new_process_id, file_name, list, list_len) == false){
             // Vemos si hay espacio para el archivo
@@ -809,7 +799,162 @@ uint64_t os_write(OsmsFile* file_desc, uint8_t* buffer, uint64_t n_bytes) {
 }
 
 uint64_t os_read(OsmsFile* file_desc, uint8_t* buffer, uint64_t n_bytes){
-    
+
+    FILE *file;
+
+    // Abre el archivo en modo lectura binaria
+    file = fopen(path, "r+b");
+
+    // FPN
+    int FPN;
+
+
+    // Obtenemos el frame donde debemos escribir //
+
+    // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
+    size_t entry_size = 256;
+    unsigned char entry[entry_size];
+
+    // Lee hasta 32 entradas
+    size_t bytes_read;
+    size_t total_bytes_read = 0;
+    for (int i = 0; i < 32; ++i) {
+        // Lee un bloque de 256 bytes
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Si no se leen más datos, salir del bucle
+        if (bytes_read == 0) {
+            break;
+        } else {
+            total_bytes_read = total_bytes_read + bytes_read;
+        }
+
+        int process_id = (unsigned char)entry[15]; // El id del proceso
+        if(process_id == file_desc->process_id){
+            int counter = 16;
+            for(int i = 0; i < 10; i++){
+
+                // Nombre del archivo
+                unsigned char archive_name[15] = {0};
+                strncpy(archive_name, entry + counter + 1, 14);
+
+                if(strcmp(archive_name, file_desc->file_name) == 0){
+                    // Direcion Virtual
+                    uint32_t virtual_direction = 0;
+                    for (int i = 0; i < 4; i++){
+                        virtual_direction |= ((uint64_t)entry[counter + 20 + i] << (8 * i));
+                    }
+                    uint32_t VPN = (virtual_direction >> 15) & 0x1FFF; // Obtenemos el VPN
+                    fseek(file, -total_bytes_read, SEEK_CUR);
+                    FPN = os_find_FPN((uint32_t)process_id, VPN, file);
+                    fseek(file, 212992, SEEK_SET); //Seteamos para leer desde los frames
+                    break; // Obtuvimos el FPN
+
+                }
+                counter += 24;
+            }
+        }
+
+    }
+
+    // Leemos en el archivo
+
+    fseek(file, 32768*FPN, SEEK_CUR); //Seteamos para leer desde los frames
+    if(n_bytes <= 32768 - file_desc->current_position_read){
+        fseek(file, file_desc->current_position_read, SEEK_CUR); // Movemos donde se tiene que empezar a leer
+        fread(buffer, 1, n_bytes, file);
+        file_desc->current_position_read = file_desc->current_position_read + n_bytes;
+        fclose(file);
+        return n_bytes;
+    } else{
+        int n_bytes_to_read = 32768 - file_desc->current_position_read; // Cuantos bytes vamos a leer
+        fseek(file, file_desc->current_position, SEEK_CUR); // Movemos donde se tiene que empezar a leer
+        fread(buffer, 1, n_bytes_to_read, file);
+        file_desc->current_position_read = file_desc->current_position_read + n_bytes_to_read;
+        fclose(file);
+        return n_bytes_to_read;
+    }
+}
+
+uint64_t os_download(OsmsFile* file_desc, char* dest){
+
+    FILE *file_to_write;  // Puntero al archivo
+    FILE *file;
+    char filename[1000]; 
+
+    // Formatea la cadena con la ruta y el nombre del archivo
+    sprintf(filename, "%s%s", dest, "archivo.bin");
+
+
+    // Abre el archivo para escritura
+    file_to_write = fopen(filename, "w");  // 'w' para modo escritura, crea el archivo si no existe.
+
+    // Abre el archivo en modo lectura binaria
+    file = fopen(path, "r+b");
+
+    // FPN
+    int FPN;
+
+
+    // Obtenemos el frame donde debemos escribir //
+
+    // Definimos los bytes que contendra cada entrada y donde se almacenara la entrada
+    size_t entry_size = 256;
+    unsigned char entry[entry_size];
+
+    // Lee hasta 32 entradas
+    size_t bytes_read;
+    size_t total_bytes_read = 0;
+    for (int i = 0; i < 32; ++i) {
+        // Lee un bloque de 256 bytes
+        bytes_read = fread(entry, 1, entry_size, file);
+
+        // Si no se leen más datos, salir del bucle
+        if (bytes_read == 0) {
+            break;
+        } else {
+            total_bytes_read = total_bytes_read + bytes_read;
+        }
+
+        int process_id = (unsigned char)entry[15]; // El id del proceso
+        if(process_id == file_desc->process_id){
+            int counter = 16;
+            for(int i = 0; i < 10; i++){
+
+                // Nombre del archivo
+                unsigned char archive_name[15] = {0};
+                strncpy(archive_name, entry + counter + 1, 14);
+
+                if(strcmp(archive_name, file_desc->file_name) == 0){
+                    // Direcion Virtual
+                    uint32_t virtual_direction = 0;
+                    for (int i = 0; i < 4; i++){
+                        virtual_direction |= ((uint64_t)entry[counter + 20 + i] << (8 * i));
+                    }
+                    uint32_t VPN = (virtual_direction >> 15) & 0x1FFF; // Obtenemos el VPN
+                    fseek(file, -total_bytes_read, SEEK_CUR);
+                    FPN = os_find_FPN((uint32_t)process_id, VPN, file);
+                    fseek(file, 212992, SEEK_SET); //Seteamos para leer desde los frames
+                    break; // Obtuvimos el FPN
+
+                }
+                counter += 24;
+            }
+        }
+
+    }
+
+    fseek(file, 32768*FPN, SEEK_CUR); //Seteamos para leer desde los frames
+
+    // Creamos array con los bytes en cada elemento
+    size_t entry_size_read = 32768;
+    unsigned char entry_read[entry_size_read];
+    bytes_read = fread(entry_read, 1, entry_size_read, file);
+    fwrite(entry_read, 1, bytes_read, file_to_write);
+    fclose(file);
+    fclose(file_to_write);
+    return bytes_read;
+
 }
 
 void os_close(OsmsFile* file_desc){

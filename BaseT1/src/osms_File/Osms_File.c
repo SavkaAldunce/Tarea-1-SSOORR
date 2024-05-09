@@ -21,7 +21,7 @@ bool file_exists(int process_id, char *file_name, FilesList *list, int list_len)
 OsmsFile file_create(int process_id, char *file_name){
 
     OsmsFile file;
-    file = (OsmsFile){.file_id = count_id, .process_id = process_id, .file_name = file_name, .current_position = 0};
+    file = (OsmsFile){.file_id = count_id, .process_id = process_id, .file_name = file_name, .current_position = 0, .current_position_read = 0};
     count_id = count_id + 1;
     return file;
 
