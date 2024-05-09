@@ -10,7 +10,7 @@ typedef struct
     int file_id;    // id del archivo
     int process_id;
     char *file_name;
-    off_t current_position; // Posición actual del puntero de archivo
+    off_t current_position;
     off_t current_position_read;   
 } OsmsFile;
 
